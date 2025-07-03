@@ -74,13 +74,13 @@ class AnjaniCourierClient:
             # Valid data rows have exactly 7 <td> elements and the 2nd column is a serial no.
             if len(cols) == 7 and cols[1].text.strip().isdigit():
                 item = {
-                    "pc_code": pc_code,
-                    "inserted_at": datetime.now(),
-                    "branch_name": current_branch or "Unknown",
-                    "area_name": cols[2].get_text(strip=True),
-                    "zone_type": cols[3].get_text(strip=True),
-                    "delivery_type": cols[5].get_text(strip=True),
-                    "transit_days": cols[6].get_text(strip=True),
+                    "Pin Code": pc_code,
+                    "Inserted At": datetime.now(),
+                    "Branch Name": current_branch or "Unknown",
+                    "Area Name": cols[2].get_text(strip=True),
+                    "Zone Type": cols[3].get_text(strip=True),
+                    "Delivery Type": cols[5].get_text(strip=True),
+                    "Transit Days": cols[6].get_text(strip=True),
                 }
 
                 # Insert detailed row
@@ -89,16 +89,16 @@ class AnjaniCourierClient:
 
         # After processing the table, log success/failure summary per pincode
         summary_doc = {
-            "pc_code": pc_code,
-            "checked_at": datetime.now(),
+            "Pin Code": pc_code,
+            "Checked At": datetime.now(),
         }
 
         if found_records:
-            summary_doc["status"] = "success"
+            summary_doc["Status"] = "success"
             self.success_collection.insert_one(summary_doc)
         else:
-            summary_doc["status"] = "failed"
-            summary_doc["reason"] = "No records found"
+            summary_doc["Status"] = "failed"
+            summary_doc["Reason"] = "No records found"
             self.failed_collection.insert_one(summary_doc)
 
         return found_records
@@ -117,10 +117,10 @@ class AnjaniCourierClient:
             except Exception as exc:
                 # Treat unhandled errors as failures and log them
                 self.failed_collection.insert_one({
-                    "pc_code": pc,
-                    "checked_at": datetime.now(),
-                    "status": "failed",
-                    "reason": str(exc),
+                    "Pin Code": pc,
+                    "Checked At": datetime.now(),
+                    "Status": "failed",
+                    "Reason": str(exc),
                 })
                 results["failed"].append(pc)
 
@@ -192,7 +192,7 @@ def get_pincode_list(file_path):
         print(f"Duplicate PINCODEs: {duplicate_count}")
         print(f"Unique PINCODEs: {unique_count}")
 
-        return unique_pincodes.tolist()
+        return unique_pincodes.tail(10).tolist()
 
     except FileNotFoundError:
         print(f"File not found: {file_path}")
@@ -206,7 +206,7 @@ if __name__ == "__main__":
     client = AnjaniCourierClient()
 
     # Replace with whatever list of pincodes you need to process
-    sample_pincodes =get_pincode_list("List of Pin Codes of Gujarat.csv")
+    sample_pincodes =get_pincode_list("pan_india_pincodes.csv")
 
     summary = client.process_pincodes(sample_pincodes)
     # print("Processing summary:", summary)

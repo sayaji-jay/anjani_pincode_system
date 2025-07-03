@@ -2,6 +2,8 @@ import pandas as pd
 import pymongo
 from datetime import datetime
 import os
+from openpyxl.styles import PatternFill, Font
+from openpyxl.utils.dataframe import dataframe_to_rows
 
 class MongoToExcelExporter:
     def __init__(self):
@@ -72,7 +74,34 @@ class MongoToExcelExporter:
         
         return df_all, df_success, df_failed
     
-    def create_excel_file(self, df_all, df_success, df_failed,df_delivery_zone):
+    def format_worksheet(self, worksheet, df):
+        """Format worksheet with light yellow headers and auto-adjusted columns"""
+        # Define light yellow fill for headers
+        yellow_fill = PatternFill(start_color="FFFFE066", end_color="FFFFE066", fill_type="solid")
+        header_font = Font(bold=True)
+        
+        # Apply formatting to header row
+        for cell in worksheet[1]:
+            cell.fill = yellow_fill
+            cell.font = header_font
+        
+        # Auto-adjust column widths
+        for column in worksheet.columns:
+            max_length = 0
+            column_letter = column[0].column_letter
+            
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            
+            # Set column width (with some padding)
+            adjusted_width = min(max_length + 2, 50)  # Max width of 50
+            worksheet.column_dimensions[column_letter].width = adjusted_width
+
+    def create_excel_file(self, df_all, df_success, df_failed, df_delivery_zone):
         """Create Excel file with multiple sheets"""
         # Generate filename with timestamp
         # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -82,42 +111,64 @@ class MongoToExcelExporter:
         
         # Create Excel writer object
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
-
-            # Write all data to first sheet
-            if not df_all.empty:
-                df_all = df_all[df_all['zone_type'] == 'Delivery Zone']
-                df_all.drop(['_id','inserted_at'], axis=1, inplace=True)    
-                df_all.to_excel(writer, sheet_name='Delivery Pincode Details', index=False)
-                print(f"Delivery Pincode Details sheet created with {len(df_all)} records")
-
+            # Prepare dataframes first
+            df_all_copy = df_all.copy()
             
-            # Write all data to first sheet
-            if not df_all.empty:
-                df_all = df_all.sort_values(by='pc_code')    
-                df_all.to_excel(writer, sheet_name='Row Pincode Details', index=False)
-                print(f"All Data sheet created with {len(df_all)} records")
-
+            # Sheet 1: Delivery Pincode Details
+            if not df_all_copy.empty:
+                df_delivery_only = df_all_copy[df_all_copy['Zone Type'] == 'Delivery Zone'].copy()
+                if not df_delivery_only.empty:
+                    df_delivery_only = df_delivery_only.drop(['_id','Inserted At'], axis=1, errors='ignore')
+                    df_delivery_only.to_excel(writer, sheet_name='Delivery Pincode Details', index=False)
+                    
+                    # Format the worksheet
+                    worksheet = writer.sheets['Delivery Pincode Details']
+                    self.format_worksheet(worksheet, df_delivery_only)
+                    print(f"Delivery Pincode Details sheet created with {len(df_delivery_only)} records")
             
-            # Write success data to second sheet
+            # Sheet 2: All Pincode Details (sorted)
+            if not df_all_copy.empty:
+                df_all_sorted = df_all_copy.copy()
+                df_all_sorted = df_all_sorted.drop(['_id','Inserted At'], axis=1, errors='ignore')
+                df_all_sorted = df_all_sorted.sort_values(by='Pin Code')    
+                df_all_sorted.to_excel(writer, sheet_name='All Pincode Details', index=False)
+                
+                # Format the worksheet
+                worksheet = writer.sheets['All Pincode Details']
+                self.format_worksheet(worksheet, df_all_sorted)
+                print(f"All Pincode Details sheet created with {len(df_all_sorted)} records")
+            
+            # Sheet 3: Process Success
             if not df_success.empty:
-                df_success.drop(['_id','checked_at'], axis=1, inplace=True)    
-                df_success.to_excel(writer, sheet_name='Process Success', index=False)
-                print(f"Success sheet created with {len(df_success)} records")
-
+                df_success_clean = df_success.copy()
+                df_success_clean = df_success_clean.drop(['_id','Checked At','Status'], axis=1, errors='ignore')
+                df_success_clean.to_excel(writer, sheet_name='Found Pincode', index=False)
+                
+                # Format the worksheet
+                worksheet = writer.sheets['Found Pincode']
+                self.format_worksheet(worksheet, df_success_clean)
+                print(f"Success sheet created with {len(df_success_clean)} records")
             
-            # Write failed data to third sheet
+            # Sheet 4: Process Failed
             if not df_failed.empty:
-                df_failed.drop(['_id','checked_at'], axis=1, inplace=True)
-                df_failed.to_excel(writer, sheet_name='Process Failed', index=False)
-                print(f"Failed sheet created with {len(df_failed)} records")
-
-
-
-            # Write Delivery Zone data to third sheet
+                df_failed_clean = df_failed.copy()
+                df_failed_clean = df_failed_clean.drop(['_id','Checked At','Status','Reason'], axis=1, errors='ignore')
+                df_failed_clean.to_excel(writer, sheet_name='Not Found Pincode', index=False)
+                
+                # Format the worksheet
+                worksheet = writer.sheets['Not Found Pincode']
+                self.format_worksheet(worksheet, df_failed_clean)
+                print(f"Failed sheet created with {len(df_failed_clean)} records")
+            
+            # Sheet 5: Delivery Zone Summary
             if not df_delivery_zone.empty:
-                df_delivery_zone[["pc_code","Delivery Zone Percentage"]].round(2).to_excel(writer, sheet_name='Delivery Zone', index=False)
-                print(f"Delivery Zone sheet created with {len(df_delivery_zone)} records")
-
+                df_zone_summary = df_delivery_zone[["Pin Code"]]
+                df_zone_summary.to_excel(writer, sheet_name='Possible Delivery Zone', index=False)
+                
+                # Format the worksheet
+                worksheet = writer.sheets['Possible Delivery Zone']
+                self.format_worksheet(worksheet, df_zone_summary)
+                print(f"Delivery Zone Summary sheet created with {len(df_zone_summary)} records")
         
         print(f"Excel file '{filename}' created successfully!")
         return filename
@@ -125,10 +176,11 @@ class MongoToExcelExporter:
 
     def get_delivery_zone_data(self,df):
         """Get delivery zone data from MongoDB"""
-        df_grouped = df.groupby('pc_code')['zone_type'].value_counts().unstack(fill_value=0)
+        df_grouped = df.groupby('Pin Code')['Zone Type'].value_counts().unstack(fill_value=0)
         df_grouped['Total'] = df_grouped.sum(axis=1)
         if 'Delivery Zone' in df_grouped.columns:
-            df_grouped['Delivery Zone Percentage'] = (df_grouped['Delivery Zone'] / df_grouped['Total']) * 100
+            pr = (df_grouped['Delivery Zone'] / df_grouped['Total']) * 100
+            df_grouped = df_grouped[pr >=80]
         df_grouped = df_grouped.reset_index()
         return df_grouped
     
