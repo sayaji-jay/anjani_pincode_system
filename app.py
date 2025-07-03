@@ -49,8 +49,35 @@ class AnjaniCourierClient:
         params = {"EC": 2, "PC": pc_code}
         cookies = {"ASP.NET_SessionId": self.session_id}
 
-        response = httpx.get(self._PINCODE_ENDPOINT, params=params, cookies=cookies)
-        response.raise_for_status()
+        max_retries = 2  # Allow one retry with fresh session
+        for attempt in range(max_retries):
+            try:
+                response = httpx.get(self._PINCODE_ENDPOINT, params=params, cookies=cookies, follow_redirects=False)
+                
+                # Check for 302 redirect or redirect to _NotAvailable.aspx
+                if response.status_code == 302 or (response.status_code == 200 and "_NotAvailable.aspx" in str(response.url)):
+                    if attempt == 0:  # Only retry once
+                        print(f"Session expired for pincode {pc_code}. Re-logging in...")
+                        self.session_id = self._login_and_get_session_id()
+                        cookies = {"ASP.NET_SessionId": self.session_id}
+                        print("Session refreshed. Retrying...")
+                        continue
+                    else:
+                        print(f"Failed to access pincode {pc_code} even after session refresh")
+                        return False
+                
+                response.raise_for_status()
+                break  # Success, exit retry loop
+                
+            except Exception as e:
+                if attempt == 0:
+                    print(f"Error accessing pincode {pc_code}: {e}. Trying to refresh session...")
+                    self.session_id = self._login_and_get_session_id()
+                    cookies = {"ASP.NET_SessionId": self.session_id}
+                    continue
+                else:
+                    print(f"Failed to access pincode {pc_code} even after session refresh: {e}")
+                    return False
 
         soup = BeautifulSoup(response.text, "html.parser")
         table = soup.find("table", {"id": "ReportTbl"})
@@ -106,14 +133,32 @@ class AnjaniCourierClient:
     def process_pincodes(self, pincodes: List[str]) -> Dict[str, List[str]]:
         """Fetch details for multiple pincodes and return a summary dict."""
         results = {"success": [], "failed": []}
-        for pc in pincodes:
-            print("Processing pincode:", pc)
+        request_count = 0  # Counter to track requests
+        
+        for i, pc in enumerate(pincodes, 1):
+            print(f"Processing pincode {i}/{len(pincodes)}: {pc}")
+                    # Check if pincode already exists in success collection
+            existing_success = self.success_collection.find_one({"Pin Code": int(pc)})
+            if existing_success:
+                print(f"Pincode {pc} already processed successfully. Skipping...")
+                continue
+        
             try:
                 ok = self.fetch_pincode_details(pc)
                 if ok:
                     results["success"].append(pc)
                 else:
                     results["failed"].append(pc)
+                    
+                request_count += 1
+                
+                # Add 20 second delay after every 20 requests
+                if request_count % 20 == 0 and i < len(pincodes):
+                    print(f"✅ Processed {request_count} requests. Taking 20 second break...")
+                    print(f"⏰ Remaining pincodes: {len(pincodes) - i}")
+                    time.sleep(20)
+                    print("🚀 Resuming processing...")
+                    
             except Exception as exc:
                 # Treat unhandled errors as failures and log them
                 self.failed_collection.insert_one({
@@ -123,6 +168,14 @@ class AnjaniCourierClient:
                     "Reason": str(exc),
                 })
                 results["failed"].append(pc)
+                request_count += 1
+                
+                # Add delay even for failed requests
+                if request_count % 20 == 0 and i < len(pincodes):
+                    print(f"✅ Processed {request_count} requests. Taking 20 second break...")
+                    print(f"⏰ Remaining pincodes: {len(pincodes) - i}")
+                    time.sleep(20)
+                    print("🚀 Resuming processing...")
 
         return results
 
@@ -192,7 +245,7 @@ def get_pincode_list(file_path):
         print(f"Duplicate PINCODEs: {duplicate_count}")
         print(f"Unique PINCODEs: {unique_count}")
 
-        return unique_pincodes.tail(10).tolist()
+        return unique_pincodes.tolist()
 
     except FileNotFoundError:
         print(f"File not found: {file_path}")
@@ -206,7 +259,8 @@ if __name__ == "__main__":
     client = AnjaniCourierClient()
 
     # Replace with whatever list of pincodes you need to process
-    sample_pincodes =get_pincode_list("pan_india_pincodes.csv")
+    sample_pincodes =get_pincode_list("pincodes.csv")
+    # sample_pincodes =["382165"]
 
     summary = client.process_pincodes(sample_pincodes)
     # print("Processing summary:", summary)
