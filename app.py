@@ -106,8 +106,8 @@ class AnjaniCourierClient:
     def process_pincodes(self, pincodes: List[str]) -> Dict[str, List[str]]:
         """Fetch details for multiple pincodes and return a summary dict."""
         results = {"success": [], "failed": []}
-
         for pc in pincodes:
+            print("Processing pincode:", pc)
             try:
                 ok = self.fetch_pincode_details(pc)
                 if ok:
@@ -148,6 +148,8 @@ class AnjaniCourierClient:
             cookies = driver.get_cookies()
             for cookie in cookies:
                 if cookie.get("name") == "ASP.NET_SessionId":
+                    print("Session ID:", cookie.get("value"))
+                    print("Logged in successfully")
                     return str(cookie.get("value"))
 
             raise RuntimeError("Login succeeded but session cookie not found")
@@ -158,17 +160,54 @@ class AnjaniCourierClient:
 # ---------------------------------------------------------------------------
 # Example usage
 # ---------------------------------------------------------------------------
+import pandas as pd
+
+def get_pincode_list(file_path):
+    try:
+        # Read CSV
+        df = pd.read_csv(file_path, encoding='utf-8')
+
+        # Normalize column names to handle case mismatches
+        df.columns = [col.strip().upper() for col in df.columns]
+
+        if "PINCODE" not in df.columns:
+            print("No 'PINCODE' column found in the CSV.")
+            return []
+
+        # Drop rows where PINCODE is NaN or empty
+        df = df[df["PINCODE"].notna()]
+        df = df[df["PINCODE"].astype(str).str.strip() != ""]
+
+        # Total entries
+        total_count = len(df)
+
+        # Drop duplicates
+        unique_pincodes = df["PINCODE"].drop_duplicates()
+
+        # Count after removing duplicates
+        unique_count = len(unique_pincodes)
+        duplicate_count = total_count - unique_count
+
+        print(f"Total PINCODE entries: {total_count}")
+        print(f"Duplicate PINCODEs: {duplicate_count}")
+        print(f"Unique PINCODEs: {unique_count}")
+
+        return unique_pincodes.tolist()
+
+    except FileNotFoundError:
+        print(f"File not found: {file_path}")
+        return []
+    except Exception as e:
+        print(f"Error: {e}")
+        return []
+
 
 if __name__ == "__main__":
     client = AnjaniCourierClient()
 
     # Replace with whatever list of pincodes you need to process
-    sample_pincodes = [
-        "110001",  # Example: New Delhi
-        "400001",  # Example: Mumbai
-        "999999",  # Likely invalid – will demonstrate failure logging
-    ]
+    sample_pincodes =get_pincode_list("List of Pin Codes of Gujarat.csv")
 
     summary = client.process_pincodes(sample_pincodes)
-    print("Processing summary:", summary)
+    # print("Processing summary:", summary)
 
