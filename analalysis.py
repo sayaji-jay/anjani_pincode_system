@@ -93,8 +93,7 @@ class MongoToExcelExporter:
             
             # Write all data to first sheet
             if not df_all.empty:
-                df_all = df_all.sort_values(by='pc_code')  
-                df_all.drop(['_id','inserted_at'], axis=1, inplace=True)    
+                df_all = df_all.sort_values(by='pc_code')    
                 df_all.to_excel(writer, sheet_name='Row Pincode Details', index=False)
                 print(f"All Data sheet created with {len(df_all)} records")
 
@@ -116,8 +115,7 @@ class MongoToExcelExporter:
 
             # Write Delivery Zone data to third sheet
             if not df_delivery_zone.empty:
-                df_delivery_zone.drop(['_id','checked_at','Total'], axis=1, inplace=True)    
-                df_delivery_zone.to_excel(writer, sheet_name='Delivery Zone', index=False)
+                df_delivery_zone[["pc_code","Delivery Zone Percentage"]].round(2).to_excel(writer, sheet_name='Delivery Zone', index=False)
                 print(f"Delivery Zone sheet created with {len(df_delivery_zone)} records")
 
         
@@ -129,7 +127,9 @@ class MongoToExcelExporter:
         """Get delivery zone data from MongoDB"""
         df_grouped = df.groupby('pc_code')['zone_type'].value_counts().unstack(fill_value=0)
         df_grouped['Total'] = df_grouped.sum(axis=1)
-        df_grouped['Delivery Zone'] = (df_grouped['Delivery Zone'] / df_grouped['Total']) * 100
+        if 'Delivery Zone' in df_grouped.columns:
+            df_grouped['Delivery Zone Percentage'] = (df_grouped['Delivery Zone'] / df_grouped['Total']) * 100
+        df_grouped = df_grouped.reset_index()
         return df_grouped
     
     def export_to_excel(self):
