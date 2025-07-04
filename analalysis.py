@@ -176,11 +176,20 @@ class MongoToExcelExporter:
 
     def get_delivery_zone_data(self,df):
         """Get delivery zone data from MongoDB"""
+        # Convert Pin Code to string type to avoid comparison issues
+        df['Pin Code'] = df['Pin Code'].astype(str)
+        
         df_grouped = df.groupby('Pin Code')['Zone Type'].value_counts().unstack(fill_value=0)
         df_grouped['Total'] = df_grouped.sum(axis=1)
+        
         if 'Delivery Zone' in df_grouped.columns:
-            pr = (df_grouped['Delivery Zone'] / df_grouped['Total']) * 100
-            df_grouped = df_grouped[pr >=80]
+            # Convert to numeric values and calculate percentage
+            delivery_zone = pd.to_numeric(df_grouped['Delivery Zone'], errors='coerce')
+            total = pd.to_numeric(df_grouped['Total'], errors='coerce')
+            pr = (delivery_zone / total) * 100
+            # Filter where percentage is >= 80
+            df_grouped = df_grouped[pr >= 80]
+            
         df_grouped = df_grouped.reset_index()
         return df_grouped
     
