@@ -1,100 +1,89 @@
 # Anjani Courier Data Scraping Project
 
-This project consists of two main components:
-1. `app.py` - Scrapes data from Anjani Courier website
-2. `analalysis.py` - Generates Excel reports from the scraped data
+This project scrapes pincode data from Anjani Courier website and generates detailed Excel reports with the results.
 
-## Setup Instructions
+## For Developers (Building the Executable)
 
 ### 1. Python Installation
 First, make sure you have Python installed (Python 3.8 or higher recommended):
 - Download Python from [python.org](https://www.python.org/downloads/)
 - During installation, make sure to check "Add Python to PATH"
 
-### 2. Project Setup
-```bash
-# Clone or download the project
-# Navigate to project directory
-cd Scraping
-
-# Create and activate virtual environment (recommended)
-python -m venv venv
-# For Windows:
-venv\Scripts\activate
-# For Linux/Mac:
-source venv/bin/activate
-```
-
-### 3. Install Required Packages
+### 2. Install Required Packages
 ```bash
 # Install all required packages
 pip install pandas
-pip install pymongo
 pip install openpyxl
 pip install requests
 pip install beautifulsoup4
+pip install PyInstaller
 ```
 
-## Project Components
-
-### 1. Data Scraping (`app.py`)
-This script scrapes pincode data from Anjani Courier website and stores it in MongoDB.
-
-**How to Run:**
+### 3. Create Executable
 ```bash
-python app.py
+# Navigate to project directory
+cd Scraping
+
+# Create executable with PyInstaller
+python -m PyInstaller --onefile .\main_scraper.py --add-data ".\pincodes.csv;."
 ```
 
-The script will:
-- Scrape pincode data
-- Store results in MongoDB collections:
-  - `pincodes`: Detailed pincode information
-  - `pincode_successes`: Successfully processed pincodes
-  - `pincode_failures`: Failed pincode checks
+The executable will be created in the `dist` folder.
 
-### 2. Data Analysis (`analalysis.py`)
-This script generates Excel reports from the MongoDB data.
-
-**How to Run:**
-```bash
-python analalysis.py
+### 4. Prepare Distribution Package
+After creating the executable, create the following folder structure:
+```
+Anjani Courier Scraper/
+├── main_scraper.exe (from dist folder)
+├── pincodes.csv
+└── store/
+    └── temp_data/
 ```
 
-The script will create `anjani_courier_data.xlsx` with multiple sheets:
-- Delivery Pincode Details
-- All Pincode Details
-- Found Pincode
-- Not Found Pincode
-- Possible Delivery Zone
+## For Users (Running the Application)
 
-## Output Files
-- `anjani_courier_data.xlsx`: Contains all analyzed data in multiple sheets
-- `pincodes.csv`: Contains raw pincode data
+### 1. Setup
+- Extract all files from the zip to a folder on your computer
+- Make sure you have these folders:
+  - `store`
+  - `store/temp_data`
 
-## MongoDB Configuration
-The project uses MongoDB Atlas. Make sure to:
-1. Have a MongoDB Atlas account
-2. Update the MongoDB connection string in both scripts if needed:
-   ```python
-   mongo_uri = "mongodb+srv://your_username:your_password@your_cluster.mongodb.net/"
-   ```
+### 2. Prepare Input File
+- Open `pincodes.csv` in Excel or Notepad
+- Add your pincodes (one pincode per line)
+- Save and close the file
+
+### 3. Run the Application
+1. Double-click `main_scraper.exe`
+2. The application will show a progress window:
+   - First shows "Loading and validating input data"
+   - Then shows progress bar for pincode processing
+   - Finally shows "Generating Excel report"
+3. When complete, it will show where the files are saved
+
+### 4. Output Files
+The application creates:
+- Excel file with all pincode data (in `store` folder)
+- Log file with processing details (in `store` folder)
+- Temporary JSON files (in `store/temp_data` folder)
+
+## Important Notes
+- Do not close the progress window while processing
+- The application takes breaks every 20 pincodes to avoid server overload
+- Keep the Excel file closed while the application is running
+- Make sure you have internet connection
 
 ## Troubleshooting
-1. If you get MongoDB connection errors:
-   - Check your internet connection
-   - Verify MongoDB Atlas credentials
-   - Ensure your IP is whitelisted in MongoDB Atlas
-
-2. If Excel file generation fails:
-   - Make sure no Excel file is open while running the script
-   - Check if you have write permissions in the directory
+If you encounter issues:
+1. Check the log file in the `store` folder
+2. Make sure your pincodes.csv is properly formatted
+3. Verify all required folders exist
+4. Check your internet connection
+5. Try running the application again
 
 ## Process Flow
-1. Run `app.py` first to scrape and store data
-2. Once scraping is complete, run `analalysis.py` to generate reports
-3. Check the generated Excel file for results
-
-## Notes
-- The scraping process may take some time depending on the number of pincodes
-- Make sure you have stable internet connection while running the scripts
-- Keep the Excel file closed while running the analysis script 
+1. Application reads pincodes from CSV file
+2. Processes each pincode with Anjani Courier website
+3. Stores results in temporary JSON files
+4. Generates final Excel report with all data
+5. Shows success message with file locations 
