@@ -7,6 +7,9 @@ import io
 import os
 from typing import Dict, List, Optional
 from datetime import datetime
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+from threading import Thread
 
 import httpx
 from bs4 import BeautifulSoup
@@ -38,6 +41,134 @@ class Logger:
     def flush(self):
         self.terminal.flush()
         self.log_file.flush()
+
+class ProgressWindow:
+    def __init__(self):
+        # Create main window
+        self.root = tk.Tk()
+        self.root.title("Anjani Courier Data Processing")
+        
+        # Set window size and position it in center
+        window_width = 500
+        window_height = 200
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        center_x = int(screen_width/2 - window_width/2)
+        center_y = int(screen_height/2 - window_height/2)
+        self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
+        
+        # Add padding around the window
+        self.main_frame = ttk.Frame(self.root, padding="20")
+        self.main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Loading spinner (initially hidden)
+        self.loading_label = ttk.Label(self.main_frame, text="⟳ Initializing...", font=("Arial", 12))
+        self.loading_label.grid(row=0, column=0, sticky=tk.W, pady=(0, 10))
+        self.loading_label.grid_remove()
+        
+        # Progress Frame (initially hidden)
+        self.progress_frame = ttk.Frame(self.main_frame)
+        self.progress_frame.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=10)
+        self.progress_frame.grid_remove()
+        
+        # Progress Label
+        self.label_var = tk.StringVar(value="")
+        self.label = ttk.Label(self.progress_frame, textvariable=self.label_var, font=("Arial", 10))
+        self.label.grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        
+        # Progress Bar
+        self.progress = ttk.Progressbar(
+            self.progress_frame, 
+            orient="horizontal", 
+            length=400, 
+            mode="determinate"
+        )
+        self.progress.grid(row=1, column=0, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # Status Label
+        self.status_var = tk.StringVar(value="")
+        self.status = ttk.Label(self.progress_frame, textvariable=self.status_var, font=("Arial", 9))
+        self.status.grid(row=2, column=0, sticky=tk.W)
+        
+        # Center the frame
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        
+        # Make window stay on top
+        self.root.attributes('-topmost', True)
+        
+        # Disable close button
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
+        
+        self.total = 0
+        self.current = 0
+        
+    def show_loading(self, message: str):
+        """Show loading spinner with message"""
+        self.progress_frame.grid_remove()
+        self.loading_label.configure(text=f"⟳ {message}")
+        self.loading_label.grid()
+        self._animate_loading()
+        self.root.update()
+    
+    def _animate_loading(self):
+        """Animate the loading spinner"""
+        current_text = self.loading_label.cget("text")
+        if "⟳" in current_text:
+            new_text = current_text.replace("⟳", "⟲")
+        else:
+            new_text = current_text.replace("⟲", "⟳")
+        self.loading_label.configure(text=new_text)
+        self.root.after(500, self._animate_loading)
+    
+    def start_progress(self, total_pincodes: int, message: str):
+        """Switch to progress bar mode"""
+        self.total = total_pincodes
+        self.current = 0
+        self.loading_label.grid_remove()
+        self.progress_frame.grid()
+        self.label_var.set(message)
+        self.status_var.set(f"Processed: 0/{total_pincodes}")
+        self.progress["value"] = 0
+        self.root.update()
+    
+    def update_progress(self, current: int, message: str):
+        """Update progress bar and message"""
+        self.current = current
+        progress = (current / self.total) * 100
+        
+        self.label_var.set(message)
+        self.progress["value"] = progress
+        self.status_var.set(f"Processed: {current}/{self.total}")
+        self.root.update()
+    
+    def show_completion(self, excel_path: str, log_path: str):
+        """Show completion message and close on OK"""
+        excel_dir = os.path.dirname(excel_path)
+        excel_name = os.path.basename(excel_path)
+        log_name = os.path.basename(log_path)
+        
+        message = (
+            "Process completed successfully!\n\n"
+            f"Files saved in: {excel_dir}\n"
+            f"Excel file: {excel_name}\n"
+            f"Log file: {log_name}\n\n"
+            "Click OK to close the application."
+        )
+        
+        messagebox.showinfo("Success", message, parent=self.root)
+        self.root.quit()
+        sys.exit(0)
+    
+    def show_error(self, error_message: str):
+        """Show error message and close on OK"""
+        messagebox.showerror(
+            "Error", 
+            f"An error occurred:\n\n{error_message}\n\nClick OK to close the application.",
+            parent=self.root
+        )
+        self.root.quit()
+        sys.exit(1)
 
 class AnjaniCourierClient:
     _BASE_URL = "http://www.anjanicourier.in/"
@@ -178,12 +309,15 @@ class AnjaniCourierClient:
 
         return found_records
 
-    def process_pincodes(self, pincodes: List[str]) -> Dict[str, List[str]]:
+    def process_pincodes(self, pincodes: List[str], progress_window: ProgressWindow = None) -> Dict[str, List[str]]:
         """Fetch details for multiple pincodes and return a summary dict."""
         results = {"success": [], "failed": []}
         request_count = 0  # Counter to track requests
         
         for i, pc in enumerate(pincodes, 1):
+            if progress_window:
+                progress_window.update_progress(i-1, f"Processing pincode: {pc}")
+            
             print(f"Processing pincode {i}/{len(pincodes)}: {pc}")
             # Check if pincode already exists in success collection
             success_data = self._read_json_file(self.success_file)
@@ -203,6 +337,8 @@ class AnjaniCourierClient:
                 
                 # Add 20 second delay after every 20 requests
                 if request_count % 20 == 0 and i < len(pincodes):
+                    if progress_window:
+                        progress_window.update_progress(i, "Taking a short break to avoid rate limiting...")
                     print(f"✅ Processed {request_count} requests. Taking 20 second break...")
                     print(f"⏰ Remaining pincodes: {len(pincodes) - i}")
                     time.sleep(20)
@@ -223,10 +359,16 @@ class AnjaniCourierClient:
                 
                 # Add delay even for failed requests
                 if request_count % 20 == 0 and i < len(pincodes):
+                    if progress_window:
+                        progress_window.update_progress(i, "Taking a short break to avoid rate limiting...")
                     print(f"✅ Processed {request_count} requests. Taking 20 second break...")
                     print(f"⏰ Remaining pincodes: {len(pincodes) - i}")
                     time.sleep(20)
                     print("🚀 Resuming processing...")
+            
+            # Update progress at the end of each iteration
+            if progress_window:
+                progress_window.update_progress(i, f"Processed pincode: {pc}")
 
         return results
 
@@ -373,26 +515,26 @@ class JsonToExcelExporter:
                 print(f"All Pincode Details sheet created with {len(df_all_sorted)} records")
             
             # Sheet 3: Process Success
-            if not df_success.empty:
-                df_success_clean = df_success.copy()
-                df_success_clean = df_success_clean.drop(['Checked At','Status'], axis=1, errors='ignore')
-                df_success_clean.to_excel(writer, sheet_name='Found Pincode', index=False)
+            # if not df_success.empty:
+            #     df_success_clean = df_success.copy()
+            #     df_success_clean = df_success_clean.drop(['Checked At','Status'], axis=1, errors='ignore')
+            #     df_success_clean.to_excel(writer, sheet_name='Found Pincode', index=False)
                 
-                # Format the worksheet
-                worksheet = writer.sheets['Found Pincode']
-                self.format_worksheet(worksheet, df_success_clean)
-                print(f"Success sheet created with {len(df_success_clean)} records")
+            #     # Format the worksheet
+            #     worksheet = writer.sheets['Found Pincode']
+            #     self.format_worksheet(worksheet, df_success_clean)
+            #     print(f"Success sheet created with {len(df_success_clean)} records")
             
             # Sheet 4: Process Failed
-            if not df_failed.empty:
-                df_failed_clean = df_failed.copy()
-                df_failed_clean = df_failed_clean.drop(['Checked At','Status','Reason'], axis=1, errors='ignore')
-                df_failed_clean.to_excel(writer, sheet_name='Not Found Pincode', index=False)
+            # if not df_failed.empty:
+            #     df_failed_clean = df_failed.copy()
+            #     df_failed_clean = df_failed_clean.drop(['Checked At','Status','Reason'], axis=1, errors='ignore')
+            #     df_failed_clean.to_excel(writer, sheet_name='Not Found Pincode', index=False)
                 
-                # Format the worksheet
-                worksheet = writer.sheets['Not Found Pincode']
-                self.format_worksheet(worksheet, df_failed_clean)
-                print(f"Failed sheet created with {len(df_failed_clean)} records")
+            #     # Format the worksheet
+            #     worksheet = writer.sheets['Not Found Pincode']
+            #     self.format_worksheet(worksheet, df_failed_clean)
+            #     print(f"Failed sheet created with {len(df_failed_clean)} records")
             
             # Sheet 5: Delivery Zone Summary
             if not df_delivery_zone.empty:
@@ -455,8 +597,45 @@ class JsonToExcelExporter:
             print(f"Error occurred: {str(e)}")
             return None
 
-def get_pincode_list(file_path):
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
+
+def select_csv_file():
+    """Open file dialog to select CSV file"""
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    
+    # Show file dialog
+    file_path = filedialog.askopenfilename(
+        title="Select Pincode CSV File",
+        filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+    )
+    
+    if not file_path:
+        messagebox.showerror("Error", "No file selected. Please select a CSV file with pincodes.")
+        return None
+        
+    return file_path
+
+def get_pincode_list(file_path=None):
+    try:
+        # If no file path provided, try default or ask user to select
+        if not file_path:
+            default_path = resource_path("pincodes.csv")
+            if os.path.exists(default_path):
+                file_path = default_path
+            else:
+                file_path = select_csv_file()
+                if not file_path:
+                    return []
+
         # Read CSV
         df = pd.read_csv(file_path, encoding='utf-8')
 
@@ -464,7 +643,7 @@ def get_pincode_list(file_path):
         df.columns = [col.strip().upper() for col in df.columns]
 
         if "PINCODE" not in df.columns:
-            print("No 'PINCODE' column found in the CSV.")
+            messagebox.showerror("Error", "No 'PINCODE' column found in the CSV file.")
             return []
 
         # Drop rows where PINCODE is NaN or empty
@@ -488,46 +667,66 @@ def get_pincode_list(file_path):
         return unique_pincodes.tolist()
 
     except FileNotFoundError:
-        print(f"File not found: {file_path}")
+        messagebox.showerror("Error", f"File not found: {file_path}")
         return []
     except Exception as e:
-        print(f"Error: {e}")
+        messagebox.showerror("Error", f"Error reading CSV file: {str(e)}")
         return []
 
 def run_scraping_and_analysis():
+    # Create directories
+    store_dir = "store"
+    os.makedirs(store_dir, exist_ok=True)
+    
     # Create timestamp for log file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_filename = f"scraping_analysis_log_{timestamp}.txt"
+    log_path = os.path.join(store_dir, log_filename)
     
     # Set up logging
     logger = Logger(log_filename)
     sys.stdout = logger
     
+    # Create progress window
+    progress_window = ProgressWindow()
+    
     try:
         print(f"Starting scraping and analysis process at {datetime.now()}")
         print("="*50)
         
-        # Step 1: Run Scraping Process
-        print("\nSTEP 1: SCRAPING PROCESS")
-        print("="*50)
+        # Step 1: Initialize and get pincode list
+        progress_window.show_loading("Loading and validating input data...")
         
-        # Get pincode list
-        pincodes = get_pincode_list("pincodes.csv")
+        # Get pincode list - will prompt for file if needed
+        pincodes = get_pincode_list()
         if not pincodes:
-            print("Error: No pincodes found to process!")
+            progress_window.show_error("No pincodes found to process!")
             return
+        
+        # Ask user if they want to proceed
+        proceed = messagebox.askyesno(
+            "Confirm",
+            f"Found {len(pincodes)} pincodes to process.\nDo you want to continue?",
+            parent=progress_window.root
+        )
+        
+        if not proceed:
+            progress_window.show_error("Process cancelled by user.")
+            return
+        
+        # Step 2: Process Pincodes
+        progress_window.start_progress(len(pincodes), "Starting pincode processing...")
         
         # Initialize scraper and process pincodes
         client = AnjaniCourierClient()
-        summary = client.process_pincodes(pincodes)
+        summary = client.process_pincodes(pincodes, progress_window)
         
         print("\nScraping Summary:")
         print(f"Successfully processed: {len(summary['success'])} pincodes")
         print(f"Failed to process: {len(summary['failed'])} pincodes")
         
-        # Step 2: Run Analysis Process
-        print("\nSTEP 2: ANALYSIS PROCESS")
-        print("="*50)
+        # Step 3: Generate Excel
+        progress_window.show_loading("Generating Excel report...")
         
         # Initialize exporter and run analysis
         exporter = JsonToExcelExporter()
@@ -536,17 +735,22 @@ def run_scraping_and_analysis():
         if excel_file:
             print(f"\nProcess completed successfully!")
             print(f"Excel file generated: {excel_file}")
-            print(f"Log file generated: {log_filename}")
-            print(f"JSON files stored in: temp_data/")
+            print(f"Log file generated: {log_path}")
+            print(f"JSON files stored in: {os.path.join(store_dir, 'temp_data')}")
+            
+            # Show completion message and close
+            progress_window.show_completion(excel_file, log_path)
         else:
-            print("\nError: Failed to generate Excel file!")
+            progress_window.show_error("Failed to generate Excel file!")
             
     except Exception as e:
-        print(f"\nError occurred during processing: {str(e)}")
+        error_msg = f"Error occurred during processing: {str(e)}"
+        print(f"\n{error_msg}")
+        progress_window.show_error(error_msg)
     finally:
         # Restore original stdout
         sys.stdout = sys.__stdout__
-        print(f"\nProcess completed. Check {log_filename} for detailed logs.")
+        print(f"\nProcess completed. Check {log_path} for detailed logs.")
 
 if __name__ == "__main__":
     run_scraping_and_analysis()
