@@ -414,43 +414,107 @@ class JsonToExcelExporter:
         self.pincode_file = os.path.join(self.temp_dir, "pincodes.json")
         self.success_file = os.path.join(self.temp_dir, "pincode_successes.json")
         self.failed_file = os.path.join(self.temp_dir, "pincode_failures.json")
+
+        # State code mapping based on first two digits of pincode
+        self.state_code_mapping = {
+            '11': 'DL',
+            '12': 'HR', '13': 'HR',
+            '14': 'PB', '15': 'PB',
+            '16': 'CH',
+            '17': 'HP',
+            '18': 'JK', '19': 'JK',
+            '20': 'UP', '21': 'UP', '22': 'UP', '23': 'UP', '24': 'UP', 
+            '25': 'UP', '26': 'UP', '27': 'UP', '28': 'UP',
+            '30': 'RJ', '31': 'RJ', '32': 'RJ', '33': 'RJ', '34': 'RJ', '35': 'RJ',
+            '36': 'GJ', '37': 'GJ', '38': 'GJ', '39': 'GJ',
+            '40': 'MH', '41': 'MH', '42': 'MH', '43': 'MH', '44': 'MH',
+            '45': 'MP', '46': 'MP', '47': 'MP', '48': 'MP',
+            '49': 'CG',
+            '50': 'TG',
+            '51': 'AP', '52': 'AP', '53': 'AP',
+            '56': 'KA', '57': 'KA', '58': 'KA', '59': 'KA',
+            '60': 'TN', '61': 'TN', '62': 'TN', '63': 'TN', '64': 'TN', '65': 'TN', '66': 'TN',
+            '67': 'KL', '68': 'KL', '69': 'KL',
+            '70': 'WB', '71': 'WB', '72': 'WB', '73': 'WB', '74': 'WB',
+            '75': 'OD', '76': 'OD', '77': 'OD',
+            '78': 'AS',
+            '790': 'AR', '791': 'AR', '792': 'AR',
+            '793': 'ML', '794': 'ML',
+            '795': 'MN',
+            '796': 'MZ',
+            '797': 'NL', '798': 'NL',
+            '799': 'TR',
+            '80': 'BR', '81': 'BR', '82': 'BR', '83': 'BR', '84': 'BR', '85': 'BR',
+            '90': 'APS', '91': 'APS', '92': 'APS', '93': 'APS', '94': 'APS',
+            '95': 'APS', '96': 'APS', '97': 'APS', '98': 'APS', '99': 'APS'
+        }
+        
+        # Full state names mapping
+        self.state_name_mapping = {
+            'DL': 'Delhi',
+            'HR': 'Haryana',
+            'PB': 'Punjab',
+            'CH': 'Chandigarh',
+            'HP': 'Himachal Pradesh',
+            'JK': 'Jammu and Kashmir',
+            'UP': 'Uttar Pradesh',
+            'RJ': 'Rajasthan',
+            'GJ': 'Gujarat',
+            'MH': 'Maharashtra',
+            'MP': 'Madhya Pradesh',
+            'CG': 'Chhattisgarh',
+            'TG': 'Telangana',
+            'AP': 'Andhra Pradesh',
+            'KA': 'Karnataka',
+            'TN': 'Tamil Nadu',
+            'KL': 'Kerala',
+            'WB': 'West Bengal',
+            'OD': 'Odisha',
+            'AS': 'Assam',
+            'AR': 'Arunachal Pradesh',
+            'ML': 'Meghalaya',
+            'MN': 'Manipur',
+            'MZ': 'Mizoram',
+            'NL': 'Nagaland',
+            'TR': 'Tripura',
+            'BR': 'Bihar',
+            'APS': 'Army Post Service'
+        }
+        
+        # Special pincode mappings (commented out as per analalysis.py)
+        self.special_pincodes = {
+            # '396': ('DD', 'Dadra and Nagar Haveli and Daman and Diu'),
+            # '403': ('GA', 'Goa'),
+            # '605': ('PY', 'Puducherry'),
+            # '682': ('LD', 'Lakshadweep'),
+            # '737': ('SK', 'Sikkim'),
+            # '744': ('AN', 'Andaman and Nicobar Islands')
+        }
     
-    def fetch_all_data(self):
-        """Fetch data from all JSON files"""
-        print("Fetching data from JSON files...")
-        
-        # Fetch all data
-        with open(self.pincode_file, 'r', encoding='utf-8') as f:
-            all_data = json.load(f)
-        print(f"Total pincode records: {len(all_data)}")
-        
-        # Fetch success data
-        with open(self.success_file, 'r', encoding='utf-8') as f:
-            success_data = json.load(f)
-        print(f"Success records: {len(success_data)}")
-        
-        # Fetch failed data
-        with open(self.failed_file, 'r', encoding='utf-8') as f:
-            failed_data = json.load(f)
-        print(f"Failed records: {len(failed_data)}")
-        
-        return all_data, success_data, failed_data
-    
-    def convert_to_dataframes(self, all_data, success_data, failed_data):
-        """Convert JSON data to pandas DataFrames"""
-        print("Converting data to DataFrames...")
-        
-        # Convert all data to DataFrame
-        df_all = pd.DataFrame(all_data) if all_data else pd.DataFrame()
-        
-        # Convert success data to DataFrame
-        df_success = pd.DataFrame(success_data) if success_data else pd.DataFrame()
-        
-        # Convert failed data to DataFrame
-        df_failed = pd.DataFrame(failed_data) if failed_data else pd.DataFrame()
-        
-        return df_all, df_success, df_failed
-    
+    def get_state_from_pincode(self, pincode):
+        """Get state code and name based on pincode"""
+        try:
+            pincode_str = str(pincode)
+            
+            # Check for special pincodes first
+            if pincode_str[:3] in self.special_pincodes:
+                return self.special_pincodes[pincode_str[:3]]
+            
+            # Check for three-digit prefixes (like 790-799)
+            if pincode_str[:3] in self.state_code_mapping:
+                state_code = self.state_code_mapping[pincode_str[:3]]
+                return state_code, self.state_name_mapping.get(state_code, 'Unknown')
+            
+            # Check for two-digit prefixes
+            first_two = pincode_str[:2]
+            if first_two in self.state_code_mapping:
+                state_code = self.state_code_mapping[first_two]
+                return state_code, self.state_name_mapping.get(state_code, 'Unknown')
+            
+            return 'Unknown', 'Unknown'
+        except:
+            return 'Unknown', 'Unknown'
+
     def format_worksheet(self, worksheet, df):
         """Format worksheet with light yellow headers and auto-adjusted columns"""
         # Define light yellow fill for headers
@@ -478,7 +542,95 @@ class JsonToExcelExporter:
             adjusted_width = min(max_length + 2, 50)  # Max width of 50
             worksheet.column_dimensions[column_letter].width = adjusted_width
 
-    def create_excel_file(self, df_all, df_success, df_failed, df_delivery_zone):
+    def fetch_all_data(self):
+        """Fetch data from all JSON files"""
+        print("Fetching data from JSON files...")
+        
+        # Fetch all data
+        with open(self.pincode_file, 'r', encoding='utf-8') as f:
+            all_data = json.load(f)
+        print(f"Total pincode records: {len(all_data)}")
+        
+        # Fetch success data
+        with open(self.success_file, 'r', encoding='utf-8') as f:
+            success_data = json.load(f)
+        print(f"Success records: {len(success_data)}")
+        
+        # Fetch failed data
+        with open(self.failed_file, 'r', encoding='utf-8') as f:
+            failed_data = json.load(f)
+        print(f"Failed records: {len(failed_data)}")
+        
+        return all_data, success_data, failed_data
+    
+    def convert_to_dataframes(self, all_data, success_data, failed_data):
+        """Convert JSON data to pandas DataFrames"""
+        print("Converting data to DataFrames...")
+        
+        # Convert all data to DataFrame
+        if all_data:
+            df_all = pd.DataFrame(all_data)
+            # Add state code and name columns based on pincode
+            df_all[['State Code', 'State']] = pd.DataFrame(df_all['Pin Code'].apply(self.get_state_from_pincode).tolist(), index=df_all.index)
+        else:
+            df_all = pd.DataFrame()
+        
+        # Convert success data to DataFrame
+        if success_data:
+            df_success = pd.DataFrame(success_data)
+            # Add state code and name columns based on pincode
+            df_success[['State Code', 'State']] = pd.DataFrame(df_success['Pin Code'].apply(self.get_state_from_pincode).tolist(), index=df_success.index)
+        else:
+            df_success = pd.DataFrame()
+        
+        # Convert failed data to DataFrame
+        if failed_data:
+            df_failed = pd.DataFrame(failed_data)
+            # Add state code and name columns based on pincode
+            df_failed[['State Code', 'State']] = pd.DataFrame(df_failed['Pin Code'].apply(self.get_state_from_pincode).tolist(), index=df_failed.index)
+        else:
+            df_failed = pd.DataFrame()
+        
+        return df_all, df_success, df_failed
+
+    def get_delivery_zone_data(self, df, state_code=None):
+        """Get delivery zone data from MongoDB"""
+        if state_code:
+            df = df[(df['State Code'] == state_code)]
+
+        # Convert Pin Code to string type to avoid comparison issues
+        df['Pin Code'] = df['Pin Code'].astype(str)
+        
+        # Create a copy of the DataFrame with required columns
+        df_with_states = df[['Pin Code', 'Zone Type', 'State Code', 'State']].copy()
+        
+        # Group by Pin Code and get value counts for Zone Type
+        zone_counts = df.groupby('Pin Code')['Zone Type'].value_counts().unstack(fill_value=0)
+        zone_counts['Total'] = zone_counts.sum(axis=1)
+        
+        if 'Delivery Zone' in zone_counts.columns:
+            # Convert to numeric values and calculate percentage
+            delivery_zone = pd.to_numeric(zone_counts['Delivery Zone'], errors='coerce')
+            total = pd.to_numeric(zone_counts['Total'], errors='coerce')
+            pr = (delivery_zone / total) * 100
+            # Filter where percentage is >= 80
+            filtered_pincodes = zone_counts[pr >= 80].index
+            not_delivery_zone = zone_counts[pr < 80].index
+            
+            # Filter the original DataFrame to get state information
+            df_delivery_zone = df_with_states[df_with_states['Pin Code'].isin(filtered_pincodes)]
+            df_not_delivery_zone = df_with_states[df_with_states['Pin Code'].isin(not_delivery_zone)]
+            # Drop duplicates to get one row per pincode
+            df_delivery_zone = df_delivery_zone.drop_duplicates(subset='Pin Code')
+            df_not_delivery_zone = df_not_delivery_zone.drop_duplicates(subset='Pin Code')
+            
+        else:
+            df_delivery_zone = pd.DataFrame(columns=['Pin Code', 'State Code', 'State'])
+            df_not_delivery_zone = pd.DataFrame(columns=['Pin Code', 'State Code', 'State'])
+            
+        return df_delivery_zone, df_not_delivery_zone
+
+    def create_excel_file(self, df_all, df_success, df_failed, df_delivery_zone, df_not_delivery_zone_only_gujrat):
         """Create Excel file with multiple sheets"""
         # Put Excel file in store directory
         filename = os.path.join(self.store_dir, "anjani_courier_data.xlsx")
@@ -489,6 +641,7 @@ class JsonToExcelExporter:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             # Prepare dataframes first
             df_all_copy = df_all.copy()
+            df_all_copy = df_all_copy.sort_values(by='Pin Code')
             
             # Sheet 1: Delivery Pincode Details
             if not df_all_copy.empty:
@@ -502,11 +655,10 @@ class JsonToExcelExporter:
                     self.format_worksheet(worksheet, df_delivery_only)
                     print(f"Delivery Pincode Details sheet created with {len(df_delivery_only)} records")
             
-            # Sheet 2: All Pincode Details (sorted)
+            # Sheet 2: All Pincode Details
             if not df_all_copy.empty:
                 df_all_sorted = df_all_copy.copy()
                 df_all_sorted = df_all_sorted.drop(['Inserted At'], axis=1, errors='ignore')
-                df_all_sorted = df_all_sorted.sort_values(by='Pin Code')    
                 df_all_sorted.to_excel(writer, sheet_name='All Pincode Details', index=False)
                 
                 # Format the worksheet
@@ -514,59 +666,29 @@ class JsonToExcelExporter:
                 self.format_worksheet(worksheet, df_all_sorted)
                 print(f"All Pincode Details sheet created with {len(df_all_sorted)} records")
             
-            # Sheet 3: Process Success
-            # if not df_success.empty:
-            #     df_success_clean = df_success.copy()
-            #     df_success_clean = df_success_clean.drop(['Checked At','Status'], axis=1, errors='ignore')
-            #     df_success_clean.to_excel(writer, sheet_name='Found Pincode', index=False)
-                
-            #     # Format the worksheet
-            #     worksheet = writer.sheets['Found Pincode']
-            #     self.format_worksheet(worksheet, df_success_clean)
-            #     print(f"Success sheet created with {len(df_success_clean)} records")
-            
-            # Sheet 4: Process Failed
-            # if not df_failed.empty:
-            #     df_failed_clean = df_failed.copy()
-            #     df_failed_clean = df_failed_clean.drop(['Checked At','Status','Reason'], axis=1, errors='ignore')
-            #     df_failed_clean.to_excel(writer, sheet_name='Not Found Pincode', index=False)
-                
-            #     # Format the worksheet
-            #     worksheet = writer.sheets['Not Found Pincode']
-            #     self.format_worksheet(worksheet, df_failed_clean)
-            #     print(f"Failed sheet created with {len(df_failed_clean)} records")
-            
             # Sheet 5: Delivery Zone Summary
             if not df_delivery_zone.empty:
-                df_zone_summary = df_delivery_zone[["Pin Code"]]
+                df_delivery_zone = df_delivery_zone.sort_values(by='Pin Code')
+                df_zone_summary = df_delivery_zone[["Pin Code", "State Code", "State"]]
                 df_zone_summary.to_excel(writer, sheet_name='Possible Delivery Zone', index=False)
                 
                 # Format the worksheet
                 worksheet = writer.sheets['Possible Delivery Zone']
                 self.format_worksheet(worksheet, df_zone_summary)
                 print(f"Delivery Zone Summary sheet created with {len(df_zone_summary)} records")
+
+            # Sheet 6: Gujarat Not Delivery Zone
+            if not df_not_delivery_zone_only_gujrat.empty:
+                df_not_delivery_zone_only_gujrat = df_not_delivery_zone_only_gujrat.sort_values(by='Pin Code')
+                df_zone_summary = df_not_delivery_zone_only_gujrat[["Pin Code"]]
+                df_zone_summary.to_excel(writer, sheet_name='Gujarat Not Delivery Zone', index=False)
+                # Format the worksheet
+                worksheet = writer.sheets['Gujarat Not Delivery Zone']
+                self.format_worksheet(worksheet, df_zone_summary)
+                print(f"Gujarat Not Delivery Zone sheet created with {len(df_zone_summary)} records")
         
         print(f"Excel file '{filename}' created successfully!")
         return filename
-
-    def get_delivery_zone_data(self,df):
-        """Get delivery zone data"""
-        # Convert Pin Code to string type to avoid comparison issues
-        df['Pin Code'] = df['Pin Code'].astype(str)
-        
-        df_grouped = df.groupby('Pin Code')['Zone Type'].value_counts().unstack(fill_value=0)
-        df_grouped['Total'] = df_grouped.sum(axis=1)
-        
-        if 'Delivery Zone' in df_grouped.columns:
-            # Convert to numeric values and calculate percentage
-            delivery_zone = pd.to_numeric(df_grouped['Delivery Zone'], errors='coerce')
-            total = pd.to_numeric(df_grouped['Total'], errors='coerce')
-            pr = (delivery_zone / total) * 100
-            # Filter where percentage is >= 80
-            df_grouped = df_grouped[pr >= 80]
-            
-        df_grouped = df_grouped.reset_index()
-        return df_grouped
     
     def export_to_excel(self):
         """Main method to export JSON data to Excel"""
@@ -576,10 +698,11 @@ class JsonToExcelExporter:
             
             # Convert to DataFrames
             df_all, df_success, df_failed = self.convert_to_dataframes(all_data, success_data, failed_data)
-            df_delivery_zone = self.get_delivery_zone_data(df_all)
+            df_delivery_zone, df_not_delivery_zone = self.get_delivery_zone_data(df_all)
+            df_delivery_zone_only_gujrat, df_not_delivery_zone_only_gujrat = self.get_delivery_zone_data(df_all, 'GJ')
 
             # Create Excel file
-            filename = self.create_excel_file(df_all, df_success, df_failed, df_delivery_zone)
+            filename = self.create_excel_file(df_all, df_success, df_failed, df_delivery_zone, df_not_delivery_zone_only_gujrat)
             
             # Print summary
             print("\n" + "="*50)
