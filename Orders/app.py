@@ -7,7 +7,7 @@ import sys
 from dataclasses import dataclass
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-
+import json
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -30,7 +30,6 @@ class LastCenter:
 @dataclass
 class TrackingStep:
     """Data class to store tracking step information"""
-    tracking_number: str
     type: str
     status: Optional[str]
     location_from: str
@@ -114,7 +113,6 @@ class TrackingInfoScraper:
                     datetime_str = datetime_str.replace("->", "").strip()
 
                     tracking_steps.append(TrackingStep(
-                        tracking_number=tracking_number,
                         type="ROUTE",
                         status=status,
                         location_from=location_from,
@@ -124,7 +122,6 @@ class TrackingInfoScraper:
                     i += 2
                 else:
                     tracking_steps.append(TrackingStep(
-                        tracking_number=tracking_number,
                         type="ROUTE",
                         status=None,
                         location_from=location_from,
@@ -183,7 +180,6 @@ class TrackingInfoScraper:
             # Convert tracking steps to dictionaries
             tracking_steps_dict = [
                 {
-                    "tracking_number": step.tracking_number,
                     "type": step.type,
                     "status": step.status,
                     "location_from": step.location_from,
@@ -281,6 +277,8 @@ async def update_tracking_details(results: List[Dict[str, Any]]) -> Dict[str, An
     
     # Prepare the data to send
     payload = results    
+
+    print(json.dumps(payload))
     
     async with httpx.AsyncClient() as client:
         try:
@@ -308,11 +306,12 @@ async def main():
     try:
         # Fetch tracking numbers from API
         # api_response = await fetch_tracking_numbers()
+        # print(api_response)
         api_response : APIResponse = APIResponse(
                 flag=1,
                 code=200,
                 message="Success",
-                data=["1354724014"]
+                data=["1354658944"]
             )
         if api_response.code == 200 and api_response.flag == 1:
             logger.info(f"Received {len(api_response.data)} tracking numbers to process")

@@ -1,0 +1,40 @@
+INFO - [app] Received 1 tracking numbers to process | 331ms
+INFO - [_client] HTTP Request: GET http://anjanicourier.in/Doc_Track.aspx?No=1354658965 "HTTP/1.1 200 OK" | 729ms
+INFO - [app] Successfully fetched tracking page for 1354658965 | 393.35 | 742ms
+INFO - [app] Successfully processed tracking information for 1354658965 | 1414.90 | 746ms
+INFO - [app] Processed 1 tracking numbers | 1416.08 | 747ms
+INFO - [_client] HTTP Request: POST http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking "HTTP/1.1 200 OK" | 340ms
+INFO - [app] Successfully sent tracking results to API | 152.38 | 341ms
+INFO - [app] API Response: {'success': True, 'message': 'Bulk shipment updates successful'} | 342ms
+INFO - [app] Received 1 tracking numbers to process | 631ms
+INFO - [_client] HTTP Request: GET http://anjanicourier.in/Doc_Track.aspx?No=1354658965 "HTTP/1.1 200 OK" | 638ms
+INFO - [app] Successfully fetched tracking page for 1354658965 | 258.99 | 643ms
+INFO - [app] Successfully processed tracking information for 1354658965 | 1013.73 | 645ms
+INFO - [app] Processed 1 tracking numbers | 1013.73 | 645ms
+INFO - [_client] HTTP Request: POST http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking "HTTP/1.1 200 OK" | 198ms
+INFO - [app] Successfully sent tracking results to API | 130.14 | 199ms
+INFO - [app] API Response: {'success': True, 'message': 'Bulk shipment updates successful'} | 200ms
+INFO - [app] Received 1 tracking numbers to process | 636ms
+INFO - [_client] HTTP Request: GET http://anjanicourier.in/Doc_Track.aspx?No=1354658944 "HTTP/1.1 200 OK" | 872ms
+INFO - [app] Successfully fetched tracking page for 1354658944 | 375.57 | 884ms
+INFO - [app] Successfully processed tracking information for 1354658944 | 1252.36 | 888ms
+INFO - [app] Processed 1 tracking numbers | 1253.36 | 889ms
+INFO - [_client] HTTP Request: POST http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking "HTTP/1.1 200 OK" | 492ms
+INFO - [app] Successfully sent tracking results to API | 100.19 | 494ms
+INFO - [app] API Response: {'success': True, 'message': 'Bulk shipment updates successful'} | 494ms
+INFO - [app] Received 1 tracking numbers to process | 484ms
+INFO - [_client] HTTP Request: GET http://anjanicourier.in/Doc_Track.aspx?No=1354658944 "HTTP/1.1 200 OK" | 550ms
+INFO - [app] Successfully fetched tracking page for 1354658944 | 239.70 | 564ms
+INFO - [app] Successfully processed tracking information for 1354658944 | 1083.22 | 568ms
+INFO - [app] Processed 1 tracking numbers | 1084.33 | 569ms
+INFO - [_client] HTTP Request: POST http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking "HTTP/1.1 200 OK" | 83ms
+INFO - [app] Successfully sent tracking results to API | 90.32 | 86ms
+INFO - [app] API Response: {'success': True, 'message': 'Bulk shipment updates successful'} | 87ms
+INFO - [app] Received 1 tracking numbers to process | 686ms
+INFO - [_client] HTTP Request: GET http://anjanicourier.in/Doc_Track.aspx?No=1354659712 "HTTP/1.1 200 OK" | 692ms
+INFO - [app] Successfully fetched tracking page for 1354659712 | 279.63 | 709ms
+INFO - [app] Successfully processed tracking information for 1354659712 | 1027.49 | 714ms
+INFO - [app] Processed 1 tracking numbers | 1028.04 | 715ms
+INFO - [_client] HTTP Request: POST http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking "HTTP/1.1 200 OK" | 254ms
+INFO - [app] Successfully sent tracking results to API | 82.73 | 257ms
+INFO - [app] API Response: {'success': True, 'message': 'Bulk shipment updates successful'} | 258ms
