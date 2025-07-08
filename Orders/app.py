@@ -1,13 +1,12 @@
 import httpx
 from bs4 import BeautifulSoup
-from typing import Dict, List, Optional, Union, Any
+from typing import Dict, List, Any
 from datetime import datetime
 import logging
 import sys
-from dataclasses import dataclass
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 import json
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -19,46 +18,67 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-@dataclass
-class LastCenter:
-    """Data class to store last center information"""
-    name: str
-    phone: str
-    contact: str
-    manager: str
-
-@dataclass
-class TrackingStep:
-    """Data class to store tracking step information"""
-    type: str
-    status: Optional[str]
-    location_from: str
-    location_to: str
-    datetime: Optional[str]
-
-@dataclass
-class APIResponse:
-    """Data class to store API response"""
-    flag: int
-    code: int
-    message: str
-    data: List[str]
+def convert_to_iso_datetime(date_str: str) -> str:
+    """Convert various date formats to ISO format (YYYY-MM-DDTHH:mm:ss)"""
+    try:
+        # Remove any extra spaces, arrows and normalize separators
+        date_str = date_str.replace("->", "").strip()
+        
+        # Try to extract date and time parts
+        parts = date_str.split()
+        if len(parts) < 2:  # If only date is present
+            date_part = parts[0]
+            time_part = "00:00"
+            am_pm = ""
+        else:
+            date_part = parts[0]
+            time_part = parts[1]
+            am_pm = parts[2] if len(parts) > 2 else ""
+        
+        # Parse date part
+        date_separators = ['/', '-']
+        for sep in date_separators:
+            if sep in date_part:
+                day, month, year = date_part.split(sep)
+                # Handle 2-digit year
+                if len(year) == 2:
+                    year = '20' + year  # Assuming years 2000-2099
+                break
+        
+        # Parse time part
+        hour, minute = time_part.split(':')
+        hour = int(hour)
+        
+        # Handle AM/PM
+        if am_pm.upper() == 'PM' and hour < 12:
+            hour += 12
+        elif am_pm.upper() == 'AM' and hour == 12:
+            hour = 0
+            
+        # Format to ISO
+        try:
+            formatted_date = f"{year}-{int(month):02d}-{int(day):02d}T{hour:02d}:{int(minute):02d}:00"
+            # Validate the date by parsing it
+            datetime.strptime(formatted_date, "%Y-%m-%dT%H:%M:%S")
+            return formatted_date
+        except ValueError as e:
+            logger.warning(f"Invalid date components: {date_str}, Error: {str(e)}")
+            return date_str
+            
+    except Exception as e:
+        logger.error(f"Error converting date: {date_str}, Error: {str(e)}")
+        return date_str
 
 class TrackingInfoScraper:
     """Class to handle tracking information scraping from Anjani Courier website"""
     
     def __init__(self):
-        """Initialize the scraper"""
         self.base_url = "http://anjanicourier.in/Doc_Track.aspx"
         self.async_client = None
 
-    def get_tracking_url(self, tracking_number: str) -> str:
-        """Generate the full tracking URL"""
-        return f"{self.base_url}?No={tracking_number}"
-
     async def fetch_page(self, tracking_number: str) -> BeautifulSoup:
         """Fetch the tracking page and create BeautifulSoup object"""
-        url = self.get_tracking_url(tracking_number)
+        url = f"{self.base_url}?No={tracking_number}"
         if self.async_client is None:
             self.async_client = httpx.AsyncClient()
 
@@ -70,178 +90,105 @@ class TrackingInfoScraper:
             time_taken = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(f"Successfully fetched tracking page for {tracking_number} | {time_taken:.2f}")
             return soup
-        except httpx.RequestError as e:
-            logger.error(f"Request error occurred while fetching {url}: {str(e)}")
-            raise
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error occurred while fetching {url}: {str(e)}")
+        except Exception as e:
+            logger.error(f"Error fetching {url}: {str(e)}")
             raise
 
-    def parse_tracking_rows(self, soup: BeautifulSoup) -> List[Dict[str, str]]:
-        """Parse tracking table rows and extract step information"""
-        raw_steps = []
+    def extract_tracking_steps(self, soup: BeautifulSoup) -> List[Dict[str, Any]]:
+        """Extract and process tracking steps from the page"""
+        tracking_steps = []
         tracking_rows = soup.select("#EntryTbl tr")
         
-        for tr in tracking_rows:
-            tds = tr.find_all("td")
+        i = 0
+        while i < len(tracking_rows):
+            tds = tracking_rows[i].find_all("td")
             if len(tds) >= 2:
                 text = tds[1].get_text(strip=True)
-                step_type = "ROUTE"
-                if text.startswith("OUT"):
-                    step_type = "OUT"
-                elif text.startswith("IN"):
-                    step_type = "IN"
-                raw_steps.append({"type": step_type, "text": text})
-        
-        return raw_steps
+                
+                # Process ROUTE entries
+                if not text.startswith(("OUT", "IN")):
+                    parts = [p.strip() for p in text.split("->")]
+                    location_from = parts[0]
+                    location_to = parts[1] if len(parts) > 1 else ""
 
-    def process_tracking_steps(self, raw_steps: List[Dict[str, str]], tracking_number: str) -> List[TrackingStep]:
-        """Process raw tracking steps into structured data"""
-        tracking_steps = []
-        i = 0
-        
-        while i < len(raw_steps):
-            if raw_steps[i]["type"] == "ROUTE":
-                route = raw_steps[i]["text"]
-                parts = [p.strip() for p in route.split("->")]
-                location_from = parts[0]
-                location_to = parts[1] if len(parts) > 1 else ""
+                    # Check if next row has status
+                    status = None
+                    datetime_str = None
+                    if i + 1 < len(tracking_rows):
+                        next_tds = tracking_rows[i + 1].find_all("td")
+                        if len(next_tds) >= 2:
+                            next_text = next_tds[1].get_text(strip=True)
+                            if next_text.startswith(("OUT", "IN")):
+                                status = "OUT" if next_text.startswith("OUT") else "IN"
+                                raw_datetime = next_text.replace(f"{status} -> ", "").replace("->", "").strip()
+                                datetime_str = convert_to_iso_datetime(raw_datetime)
+                                i += 1  # Skip next row as we processed it
 
-                if i + 1 < len(raw_steps) and raw_steps[i + 1]["type"] in ["OUT", "IN"]:
-                    status = raw_steps[i + 1]["type"]
-                    datetime_str = raw_steps[i + 1]["text"].replace(f"{status} -> ", "")
-                    datetime_str = datetime_str.replace("->", "").strip()
-
-                    tracking_steps.append(TrackingStep(
-                        type="ROUTE",
-                        status=status,
-                        location_from=location_from,
-                        location_to=location_to,
-                        datetime=datetime_str
-                    ))
-                    i += 2
-                else:
-                    tracking_steps.append(TrackingStep(
-                        type="ROUTE",
-                        status=None,
-                        location_from=location_from,
-                        location_to=location_to,
-                        datetime=None
-                    ))
-                    i += 1
-            else:
-                i += 1
+                    tracking_steps.append({
+                        "type": "ROUTE",
+                        "status": status,
+                        "location_from": location_from,
+                        "location_to": location_to if location_to else None,
+                        "datetime": datetime_str
+                    })
+            i += 1
         
         return tracking_steps
 
-    def get_additional_info(self, soup: BeautifulSoup) -> tuple[str, str, LastCenter]:
+    def extract_additional_info(self, soup: BeautifulSoup) -> Dict[str, Any]:
         """Extract additional tracking information"""
-        status = ""
-        from_center = ""
-        last_center = LastCenter(name="", phone="", contact="", manager="")
+        def safe_get_text(element_id: str) -> str:
+            try:
+                return soup.find("span", id=element_id).get_text(strip=True)
+            except AttributeError:
+                return ""
 
-        try:
-            status = soup.find("span", id="lblStatus").get_text(strip=True)
-        except AttributeError:
-            logger.warning("Status information not found")
-
-        try:
-            from_center = soup.find("span", id="lblCenterDetail").get_text(
-                separator=" ", strip=True
-            )
-        except AttributeError:
-            logger.warning("Center detail information not found")
-
-        try:
-            last_center = LastCenter(
-                name=soup.find("span", id="lastCenterName").get_text(strip=True),
-                phone=soup.find("span", id="lastCenterph").get_text(strip=True),
-                contact=soup.find("span", id="lastCenterContact").get_text(strip=True),
-                manager=soup.find("span", id="lastCenterMgr").get_text(strip=True)
-            )
-        except AttributeError:
-            logger.warning("Last center information not found")
-
-        return status, from_center, last_center
-
-    def parse_status(self, status_text: str) -> str:
-        """Parse status text to extract the main status"""
-        if not status_text:
-            return ""
-        status_upper = status_text.upper()
-        return status_upper
-
-
-    def parse_from_center(self, from_center_text: str) -> Dict[str, str]:
-        """Parse from_center text to extract name and address"""
-        if not from_center_text:
-            return {"name": "", "address": ""}
+        # Get basic info
+        status = safe_get_text("lblStatus").upper()
+        from_center_text = safe_get_text("lblCenterDetail")
         
-        # Try to split by common patterns to separate name from address
-        parts = from_center_text.split(" - ")
-        if len(parts) >= 2:
-            # Last part is usually pincode, everything before last dash is address
-            name_and_address = " - ".join(parts[:-1])
-            pincode = parts[-1]
-            
-            # Try to extract center name (usually first few words)
-            words = name_and_address.split()
-            if len(words) >= 2:
-                # Take first 2-3 words as name, rest as address
-                name = " ".join(words[:2]).upper()
-                address = " ".join(words[2:]) + " - " + pincode
+        # Parse from_center
+        from_center = {"name": "", "address": ""}
+        if from_center_text:
+            parts = from_center_text.split(" - ")
+            if len(parts) >= 2:
+                from_center["name"] = parts[0].upper()
+                from_center["address"] = parts[1]
             else:
-                name = words[0].upper() if words else ""
-                address = from_center_text
-        else:
-            # If no clear pattern, try to extract first few words as name
-            words = from_center_text.split()
-            if len(words) >= 2:
-                name = " ".join(words[:2]).upper()
-                address = from_center_text
-            else:
-                name = from_center_text.upper()
-                address = from_center_text
-        
-        return {"name": name, "address": address}
+                from_center["name"] = from_center_text.upper()
+                from_center["address"] = from_center_text
 
-    def parse_last_center(self, last_center: LastCenter) -> Dict[str, Any]:
-        """Parse last center information into the required format"""
-        result = {
-            "name": last_center.name,
-            "phone": last_center.phone,
+        # Parse last_center info
+        last_center = {
+            "name": safe_get_text("lastCenterName"),
+            "phone": safe_get_text("lastCenterph"),
             "contact": {"name": "", "mobile": ""},
             "manager": {"phone": "", "note": ""}
         }
         
-        # Parse contact information
-        contact_text = last_center.contact
-        if contact_text:
-            # Extract name and mobile from contact like "HARSUKH TUKADIYA , Mobile: 9033051350"
-            if "Mobile:" in contact_text:
-                parts = contact_text.split("Mobile:")
-                name_part = parts[0].strip().rstrip(",").strip()
-                mobile_part = parts[1].strip()
-                result["contact"]["name"] = name_part
-                result["contact"]["mobile"] = mobile_part
-            else:
-                # If no mobile pattern, put everything in name
-                result["contact"]["name"] = contact_text
-        
-        # Parse manager information
-        manager_text = last_center.manager
-        if manager_text:
-            # Extract phone from manager like "LUCKY TUKADIYA , Ph: 9988776655"
-            if "Ph:" in manager_text:
-                parts = manager_text.split("Ph:")
-                phone_part = parts[1].strip() if len(parts) > 1 else ""
-                result["manager"]["phone"] = phone_part
-                result["manager"]["note"] = "Call for gate pass" if phone_part else ""
-            elif "Ph" in manager_text:
-                # Handle case where it's just "Ph" without colon
-                result["manager"]["note"] = "Call for gate pass"
-        
-        return result
+        # Parse contact
+        contact_text = safe_get_text("lastCenterContact")
+        if "Mobile:" in contact_text:
+            parts = contact_text.split("Mobile:")
+            last_center["contact"]["name"] = parts[0].strip().rstrip(",").strip()
+            last_center["contact"]["mobile"] = parts[1].strip()
+        else:
+            last_center["contact"]["name"] = contact_text
+
+        # Parse manager
+        manager_text = safe_get_text("lastCenterMgr")
+        if "Ph:" in manager_text:
+            phone = manager_text.split("Ph:")[1].strip()
+            last_center["manager"]["phone"] = phone
+            last_center["manager"]["note"] = "Call for gate pass" if phone else ""
+        elif "Ph" in manager_text:
+            last_center["manager"]["note"] = "Call for gate pass"
+
+        return {
+            "status": status,
+            "from_center": from_center,
+            "last_center": last_center
+        }
 
     async def get_tracking_info(self, tracking_number: str) -> Dict[str, Any]:
         """Get tracking information for a single tracking number"""
@@ -249,42 +196,22 @@ class TrackingInfoScraper:
             start_time = datetime.now()
             
             soup = await self.fetch_page(tracking_number)
-            raw_steps = self.parse_tracking_rows(soup)
-            tracking_steps = self.process_tracking_steps(raw_steps, tracking_number)
-            status, from_center, last_center = self.get_additional_info(soup)
+            tracking_steps = self.extract_tracking_steps(soup)
+            additional_info = self.extract_additional_info(soup)
 
             time_taken = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(f"Successfully processed tracking information for {tracking_number} | {time_taken:.2f}")
 
-            # Convert tracking steps to dictionaries
-            tracking_steps_dict = [
-                {
-                    "type": step.type,
-                    "status": step.status,
-                    "location_from": step.location_from,
-                    "location_to": step.location_to if step.location_to else None,
-                    "datetime": step.datetime
-                } for step in tracking_steps
-            ]
-
-            # Parse and format the data according to required format
-            parsed_status = self.parse_status(status)
-            parsed_from_center = self.parse_from_center(from_center)
-            parsed_last_center = self.parse_last_center(last_center)
-
             return {
                 "trackingno": tracking_number,
-                "status": parsed_status,
-                "from_center": parsed_from_center,
-                "last_center": parsed_last_center,
-                "tracking_steps": tracking_steps_dict
+                "status": additional_info["status"],
+                "from_center": additional_info["from_center"],
+                "last_center": additional_info["last_center"],
+                "tracking_steps": tracking_steps
             }
         except Exception as e:
             logger.error(f"Error processing tracking information for {tracking_number}: {str(e)}")
-            return {
-                "trackingno": tracking_number,
-                "error": str(e)
-            }
+            return {"trackingno": tracking_number, "error": str(e)}
 
     async def get_multiple_tracking_info(self, tracking_numbers: List[str]) -> List[Dict[str, Any]]:
         """Get tracking information for multiple tracking numbers concurrently"""
@@ -301,22 +228,9 @@ class TrackingInfoScraper:
             if self.async_client:
                 await self.async_client.aclose()
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-async def fetch_tracking_numbers() -> APIResponse:
+async def fetch_tracking_numbers() -> List[str]:
     """Fetch tracking numbers from API"""
-    api_url = "http://15.206.233.194:3002/paymentms/unicommerce_detail/anjaniundeliveredtrakingno"  # Replace this URL with your actual API endpoint
+    api_url = "http://15.206.233.194:3002/paymentms/unicommerce_detail/anjaniundeliveredtrakingno"
     
     async with httpx.AsyncClient() as client:
         try:
@@ -328,38 +242,25 @@ async def fetch_tracking_numbers() -> APIResponse:
             time_taken = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(f"Successfully fetched tracking numbers from API | {time_taken:.2f}")
             
-            return APIResponse(
-                flag=data["flag"],
-                code=data["code"],
-                message=data["message"],
-                data=data["data"]
-            )
-        except httpx.RequestError as e:
-            logger.error(f"Request error occurred while fetching tracking numbers: {str(e)}")
-            raise
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error occurred while fetching tracking numbers: {str(e)}")
-            raise
-        except KeyError as e:
-            logger.error(f"Invalid API response format: {str(e)}")
-            raise
+            if data.get("code") == 200 and data.get("flag") == 1:
+                return data.get("data", [])
+            else:
+                raise Exception(f"API returned error: {data.get('message', 'Unknown error')}")
+                
         except Exception as e:
-            logger.error(f"Unexpected error while fetching tracking numbers: {str(e)}")
+            logger.error(f"Error fetching tracking numbers: {str(e)}")
             raise
 
 async def update_tracking_details(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Send tracking results to API"""
-    api_url = "http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking"  # Your result API endpoint
+    api_url = "http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking"
     
-    # Prepare the data to send
-    payload = results    
-
-    print(json.dumps(payload))
+    print(json.dumps(results))
     
     async with httpx.AsyncClient() as client:
         try:
             start_time = datetime.now()
-            response = await client.post(api_url, json=payload)
+            response = await client.post(api_url, json=results)
             response.raise_for_status()
             data = response.json()
             
@@ -367,39 +268,30 @@ async def update_tracking_details(results: List[Dict[str, Any]]) -> Dict[str, An
             logger.info(f"Successfully sent tracking results to API | {time_taken:.2f}")
             
             return data
-        except httpx.RequestError as e:
-            logger.error(f"Request error occurred while sending results: {str(e)}")
-            raise
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error occurred while sending results: {str(e)}")
-            raise
         except Exception as e:
-            logger.error(f"Unexpected error while sending results: {str(e)}")
+            logger.error(f"Error sending results: {str(e)}")
             raise
 
 async def main():
-    """Main function to demonstrate usage"""
+    """Main function to process tracking information"""
     try:
-        # Fetch tracking numbers from API
-        # api_response = await fetch_tracking_numbers()
-        # print(api_response)
-        api_response : APIResponse = APIResponse(
-                flag=1,
-                code=200,
-                message="Success",
-                data=["1354658818"]
-            )
-        if api_response.code == 200 and api_response.flag == 1:
-            logger.info(f"Received {len(api_response.data)} tracking numbers to process")
+        # For testing, use hardcoded data
+        tracking_numbers = ["1354658818"]
+        
+        # Uncomment below to fetch from actual API
+        # tracking_numbers = await fetch_tracking_numbers()
+        
+        if tracking_numbers:
+            logger.info(f"Received {len(tracking_numbers)} tracking numbers to process")
             
-            # Initialize scraper and get tracking info for all numbers
             scraper = TrackingInfoScraper()
-            results = await scraper.get_multiple_tracking_info(api_response.data)
+            results = await scraper.get_multiple_tracking_info(tracking_numbers)
+            
             # Send results to API
             api_response = await update_tracking_details(results)
-            logger.info(f"API Response: {api_response}")          
+            logger.info(f"API Response: {api_response}")
         else:
-            logger.error(f"API returned error: {api_response.message}")
+            logger.error("No tracking numbers to process")
             sys.exit(1)
 
     except Exception as e:
