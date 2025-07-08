@@ -180,12 +180,32 @@ class TrackingInfoScraper:
             time_taken = (datetime.now() - start_time).total_seconds() * 1000
             logger.info(f"Successfully processed tracking information for {tracking_number} | {time_taken:.2f}")
 
+            # Convert tracking steps to dictionaries
+            tracking_steps_dict = [
+                {
+                    "tracking_number": step.tracking_number,
+                    "type": step.type,
+                    "status": step.status,
+                    "location_from": step.location_from,
+                    "location_to": step.location_to,
+                    "datetime": step.datetime
+                } for step in tracking_steps
+            ]
+
+            # Convert last center to dictionary
+            last_center_dict = {
+                "name": last_center.name,
+                "phone": last_center.phone,
+                "contact": last_center.contact,
+                "manager": last_center.manager
+            }
+
             return {
                 "tracking_number": tracking_number,
-                "tracking_steps": tracking_steps,
+                "tracking_steps": tracking_steps_dict,
                 "status": status,
                 "from_center": from_center,
-                "last_center": last_center
+                "last_center": last_center_dict
             }
         except Exception as e:
             logger.error(f"Error processing tracking information for {tracking_number}: {str(e)}")
@@ -209,9 +229,22 @@ class TrackingInfoScraper:
             if self.async_client:
                 await self.async_client.aclose()
 
+
+
+
+
+
+
+
+
+
+
+
+
+
 async def fetch_tracking_numbers() -> APIResponse:
     """Fetch tracking numbers from API"""
-    api_url = "https://your-actual-api-endpoint.com/api/tracking-numbers"  # Replace this URL with your actual API endpoint
+    api_url = "http://15.206.233.194:3002/paymentms/unicommerce_detail/anjaniundeliveredtrakingno"  # Replace this URL with your actual API endpoint
     
     async with httpx.AsyncClient() as client:
         try:
@@ -242,22 +275,54 @@ async def fetch_tracking_numbers() -> APIResponse:
             logger.error(f"Unexpected error while fetching tracking numbers: {str(e)}")
             raise
 
+async def update_tracking_details(results: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Send tracking results to API"""
+    api_url = "http://15.206.233.194:3002/paymentms/unicommerce_detail/updateanjanitraking"  # Your result API endpoint
+    
+    # Prepare the data to send
+    payload = results    
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            start_time = datetime.now()
+            response = await client.post(api_url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            
+            time_taken = (datetime.now() - start_time).total_seconds() * 1000
+            logger.info(f"Successfully sent tracking results to API | {time_taken:.2f}")
+            
+            return data
+        except httpx.RequestError as e:
+            logger.error(f"Request error occurred while sending results: {str(e)}")
+            raise
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP error occurred while sending results: {str(e)}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error while sending results: {str(e)}")
+            raise
+
 async def main():
     """Main function to demonstrate usage"""
     try:
         # Fetch tracking numbers from API
-        api_response = await fetch_tracking_numbers()
-        
+        # api_response = await fetch_tracking_numbers()
+        api_response : APIResponse = APIResponse(
+                flag=1,
+                code=200,
+                message="Success",
+                data=["1354724014"]
+            )
         if api_response.code == 200 and api_response.flag == 1:
             logger.info(f"Received {len(api_response.data)} tracking numbers to process")
             
             # Initialize scraper and get tracking info for all numbers
             scraper = TrackingInfoScraper()
             results = await scraper.get_multiple_tracking_info(api_response.data)
-            
-            # Print results for each tracking number
-            for tracking_info in results:
-                print(tracking_info)
+            # Send results to API
+            api_response = await update_tracking_details(results)
+            logger.info(f"API Response: {api_response}")          
         else:
             logger.error(f"API returned error: {api_response.message}")
             sys.exit(1)
