@@ -164,6 +164,85 @@ class TrackingInfoScraper:
 
         return status, from_center, last_center
 
+    def parse_status(self, status_text: str) -> str:
+        """Parse status text to extract the main status"""
+        if not status_text:
+            return ""
+        status_upper = status_text.upper()
+        return status_upper
+
+
+    def parse_from_center(self, from_center_text: str) -> Dict[str, str]:
+        """Parse from_center text to extract name and address"""
+        if not from_center_text:
+            return {"name": "", "address": ""}
+        
+        # Try to split by common patterns to separate name from address
+        parts = from_center_text.split(" - ")
+        if len(parts) >= 2:
+            # Last part is usually pincode, everything before last dash is address
+            name_and_address = " - ".join(parts[:-1])
+            pincode = parts[-1]
+            
+            # Try to extract center name (usually first few words)
+            words = name_and_address.split()
+            if len(words) >= 2:
+                # Take first 2-3 words as name, rest as address
+                name = " ".join(words[:2]).upper()
+                address = " ".join(words[2:]) + " - " + pincode
+            else:
+                name = words[0].upper() if words else ""
+                address = from_center_text
+        else:
+            # If no clear pattern, try to extract first few words as name
+            words = from_center_text.split()
+            if len(words) >= 2:
+                name = " ".join(words[:2]).upper()
+                address = from_center_text
+            else:
+                name = from_center_text.upper()
+                address = from_center_text
+        
+        return {"name": name, "address": address}
+
+    def parse_last_center(self, last_center: LastCenter) -> Dict[str, Any]:
+        """Parse last center information into the required format"""
+        result = {
+            "name": last_center.name,
+            "phone": last_center.phone,
+            "contact": {"name": "", "mobile": ""},
+            "manager": {"phone": "", "note": ""}
+        }
+        
+        # Parse contact information
+        contact_text = last_center.contact
+        if contact_text:
+            # Extract name and mobile from contact like "HARSUKH TUKADIYA , Mobile: 9033051350"
+            if "Mobile:" in contact_text:
+                parts = contact_text.split("Mobile:")
+                name_part = parts[0].strip().rstrip(",").strip()
+                mobile_part = parts[1].strip()
+                result["contact"]["name"] = name_part
+                result["contact"]["mobile"] = mobile_part
+            else:
+                # If no mobile pattern, put everything in name
+                result["contact"]["name"] = contact_text
+        
+        # Parse manager information
+        manager_text = last_center.manager
+        if manager_text:
+            # Extract phone from manager like "LUCKY TUKADIYA , Ph: 9988776655"
+            if "Ph:" in manager_text:
+                parts = manager_text.split("Ph:")
+                phone_part = parts[1].strip() if len(parts) > 1 else ""
+                result["manager"]["phone"] = phone_part
+                result["manager"]["note"] = "Call for gate pass" if phone_part else ""
+            elif "Ph" in manager_text:
+                # Handle case where it's just "Ph" without colon
+                result["manager"]["note"] = "Call for gate pass"
+        
+        return result
+
     async def get_tracking_info(self, tracking_number: str) -> Dict[str, Any]:
         """Get tracking information for a single tracking number"""
         try:
@@ -183,30 +262,27 @@ class TrackingInfoScraper:
                     "type": step.type,
                     "status": step.status,
                     "location_from": step.location_from,
-                    "location_to": step.location_to,
+                    "location_to": step.location_to if step.location_to else None,
                     "datetime": step.datetime
                 } for step in tracking_steps
             ]
 
-            # Convert last center to dictionary
-            last_center_dict = {
-                "name": last_center.name,
-                "phone": last_center.phone,
-                "contact": last_center.contact,
-                "manager": last_center.manager
-            }
+            # Parse and format the data according to required format
+            parsed_status = self.parse_status(status)
+            parsed_from_center = self.parse_from_center(from_center)
+            parsed_last_center = self.parse_last_center(last_center)
 
             return {
-                "tracking_number": tracking_number,
-                "tracking_steps": tracking_steps_dict,
-                "status": status,
-                "from_center": from_center,
-                "last_center": last_center_dict
+                "trackingno": tracking_number,
+                "status": parsed_status,
+                "from_center": parsed_from_center,
+                "last_center": parsed_last_center,
+                "tracking_steps": tracking_steps_dict
             }
         except Exception as e:
             logger.error(f"Error processing tracking information for {tracking_number}: {str(e)}")
             return {
-                "tracking_number": tracking_number,
+                "trackingno": tracking_number,
                 "error": str(e)
             }
 
@@ -311,7 +387,7 @@ async def main():
                 flag=1,
                 code=200,
                 message="Success",
-                data=["1354658944"]
+                data=["1354658818"]
             )
         if api_response.code == 200 and api_response.flag == 1:
             logger.info(f"Received {len(api_response.data)} tracking numbers to process")
