@@ -6,17 +6,10 @@ import logging
 import sys
 import asyncio
 import json
-
+import re
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s - [%(module)s] %(message)s | %(msecs)dms',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('tracking.log')
-    ]
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 def convert_to_iso_datetime(date_str: str) -> str:
     """Convert various date formats to ISO format (YYYY-MM-DDTHH:mm:ss)"""
@@ -74,29 +67,28 @@ def parse_status(status_text: str) -> str:
     try:
         if not status_text:
             return ""
-            
-        # Convert to uppercase and split by spaces
-        parts = status_text.upper().split()
-        
-        # Handle different status types
+
+        status_text = status_text.upper()
+
+        # Remove any date-like patterns (e.g., 26/06/25 or 26/06/2025)
+        status_text = re.sub(r"\b\d{2}/\d{2}/\d{2,4}\b", "", status_text).strip()
+
+        # Split the cleaned status into words
+        parts = status_text.split()
+
+        # Check for known keywords in the cleaned parts
         if "DELIVERED" in parts:
             return "DELIVERED"
-        elif "UNDELIVERED" in parts:
-            return "UNDELIVERED"
-        elif "PENDING" in parts:
-            return "PENDING"
-        elif "RETURN" in parts or "RTD" in parts:
-            return "RETURN"
-        elif "TRANSIT" in parts:
-            return "IN_TRANSIT"
+        elif "MISROUTE" in parts:
+            return "MISROUTE"
+        elif "RETURN" in parts:
+            return "RETURNED"
         else:
-            # If no specific status found, return first word
-            return parts[0] if parts else ""
-            
+            return " ".join(parts) if parts else ""
+
     except Exception as e:
         logger.error(f"Error parsing status: {status_text}, Error: {str(e)}")
         return status_text
-
 class TrackingInfoScraper:
     """Class to handle tracking information scraping from Anjani Courier website"""
     
@@ -305,7 +297,7 @@ async def main():
     """Main function to process tracking information"""
     try:
         # For testing, use hardcoded data
-        #tracking_numbers =[
+    #     tracking_numbers =[
     #     "1354659050",
     #     "1354659041",
     #     "1354659040",
@@ -603,6 +595,7 @@ async def main():
     #     "1354658819",
     #     "1354658818"
     # ]
+        
         # Uncomment below to fetch from actual API   
         tracking_numbers = await fetch_tracking_numbers()
         for i in range(0, len(tracking_numbers), 10):
@@ -624,5 +617,21 @@ async def main():
         logger.error(f"Application error: {str(e)}")
         sys.exit(1)
 
-if __name__ == "__main__":
-    asyncio.run(main())
+def lambda_handler(event, context):
+    """AWS Lambda handler function"""
+    try:
+        logger.info("Lambda function started")
+        asyncio.run(main())
+        logger.info("Lambda function completed successfully")
+    except Exception as e:
+        logger.error(f"Lambda function error: {str(e)}")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": str(e)})
+        }
+    return {
+        "statusCode": 200,
+        "body": json.dumps({"message": "Tracking information processed successfully"})
+    }
+
+lambda_handler(None,None)
